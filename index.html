@@ -242,6 +242,12 @@
                         <div class="card-header">
                             <h3><i class="fas fa-list"></i> Danh sách lớp 12A5</h3>
                             <div class="card-actions">
+                                <div class="filter-group inline">
+                                    <label>Lọc tổ:</label>
+                                    <select id="studentsGroupFilter">
+                                        <option value="">Tất cả</option>
+                                    </select>
+                                </div>
                                 <button class="btn-icon" id="importStudentsBtn" title="Import từ Excel">
                                     <i class="fas fa-file-import"></i>
                                 </button>
@@ -288,6 +294,12 @@
                     <div class="filter-group">
                         <label>Học sinh:</label>
                         <select id="historyStudent">
+                            <option value="">Tất cả</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label>Tổ:</label>
+                        <select id="historyGroupFilter">
                             <option value="">Tất cả</option>
                         </select>
                     </div>
