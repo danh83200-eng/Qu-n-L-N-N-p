@@ -569,6 +569,51 @@ function renderStudentGroupDropdowns() {
     });
 }
 
+// Render group filter dropdowns (for students list and history)
+function renderGroupFilterDropdowns() {
+    const groups = getGroups();
+    
+    // Students list group filter
+    const studentsGroupFilter = document.getElementById('studentsGroupFilter');
+    if (studentsGroupFilter) {
+        const currentValue = studentsGroupFilter.value;
+        studentsGroupFilter.innerHTML = '<option value="">Tất cả</option>';
+        groups.forEach(g => {
+            const option = document.createElement('option');
+            option.value = g.id;
+            option.textContent = g.name;
+            studentsGroupFilter.appendChild(option);
+        });
+        studentsGroupFilter.value = currentValue; // Preserve selection
+        
+        // Show/hide filter based on role
+        const filterContainer = studentsGroupFilter.closest('.filter-group');
+        if (filterContainer) {
+            filterContainer.style.display = isTeacher() ? 'flex' : 'none';
+        }
+    }
+    
+    // History group filter
+    const historyGroupFilter = document.getElementById('historyGroupFilter');
+    if (historyGroupFilter) {
+        const currentValue = historyGroupFilter.value;
+        historyGroupFilter.innerHTML = '<option value="">Tất cả</option>';
+        groups.forEach(g => {
+            const option = document.createElement('option');
+            option.value = g.id;
+            option.textContent = g.name;
+            historyGroupFilter.appendChild(option);
+        });
+        historyGroupFilter.value = currentValue; // Preserve selection
+        
+        // Show/hide filter based on role
+        const filterContainer = historyGroupFilter.closest('.filter-group');
+        if (filterContainer) {
+            filterContainer.style.display = isTeacher() ? 'flex' : 'none';
+        }
+    }
+}
+
 // ============================================
 // Data Management
 // ============================================
@@ -906,6 +951,7 @@ function initializeApp() {
     updateStats();
     renderStatsTab();
     renderStudentGroupDropdowns();
+    renderGroupFilterDropdowns();
     
     // Render admin panel if teacher
     if (isTeacher()) {
@@ -1029,6 +1075,12 @@ function setupEventListeners() {
     applyHistoryFilter.addEventListener('click', renderHistory);
     exportHistoryBtn.addEventListener('click', exportHistory);
     
+    // Students group filter
+    const studentsGroupFilter = document.getElementById('studentsGroupFilter');
+    if (studentsGroupFilter) {
+        studentsGroupFilter.addEventListener('change', renderStudentsTable);
+    }
+    
     // Export students
     document.getElementById('exportStudentsBtn').addEventListener('click', exportStudents);
     document.getElementById('importStudentsBtn').addEventListener('click', () => {
@@ -1108,9 +1160,10 @@ function handleRecordSubmit(e) {
         createdAt: new Date().toISOString()
     };
     
-    const records = getRecords();
-    records.push(record);
-    saveRecords(records);
+    // Add to all records (not filtered) to avoid data loss
+    const allRecords = loadData('records') || [];
+    allRecords.push(record);
+    saveData('records', allRecords);
     
     // Reset form (keep date and student)
     recordCategory.value = '';
@@ -1163,9 +1216,10 @@ function renderTodayRecords() {
 function deleteRecord(recordId) {
     deleteModalText.textContent = 'Bạn có chắc muốn xóa ghi nhận này?';
     deleteCallback = () => {
-        let records = getRecords();
-        records = records.filter(r => r.id !== recordId);
-        saveRecords(records);
+        // Get all records (not filtered) to avoid deleting only from viewed subset
+        let allRecords = loadData('records') || [];
+        allRecords = allRecords.filter(r => r.id !== recordId);
+        saveData('records', allRecords);
         renderTodayRecords();
         renderHistory();
         updateStats();
@@ -1259,7 +1313,6 @@ function editStudent(studentId) {
     
     if (student) {
         editingStudentId = studentId;
-        studentStt.value = student.stt;
         studentName.value = student.name;
         studentGender.value = student.gender;
         
@@ -1277,19 +1330,24 @@ function editStudent(studentId) {
 }
 
 function deleteStudent(studentId) {
-    const students = getStudents();
-    const student = students.find(s => s.id === studentId);
+    const allStudents = getAllStudents();
+    const student = allStudents.find(s => s.id === studentId);
     
-    deleteModalText.textContent = `Bạn có chắc muốn xóa học sinh "${student?.name}"? Tất cả ghi nhận liên quan cũng sẽ bị xóa.`;
+    if (!student) {
+        showToast('Không tìm thấy học sinh!', 'error');
+        return;
+    }
+    
+    deleteModalText.textContent = `Bạn có chắc muốn xóa học sinh "${student.name}"? Tất cả ghi nhận liên quan cũng sẽ bị xóa.`;
     deleteCallback = () => {
-        // Remove student
-        let newStudents = students.filter(s => s.id !== studentId);
+        // Remove student from all students list
+        let newStudents = allStudents.filter(s => s.id !== studentId);
         saveStudents(newStudents);
         
-        // Remove related records
-        let records = getRecords();
-        records = records.filter(r => r.studentId !== studentId);
-        saveRecords(records);
+        // Remove related records (get all records, not filtered)
+        let allRecords = loadData('records') || [];
+        allRecords = allRecords.filter(r => r.studentId !== studentId);
+        saveData('records', allRecords);
         
         renderStudentsTable();
         renderStudentsDropdown();
@@ -1320,9 +1378,16 @@ function getPointsBadgeClass(points) {
 }
 
 function renderStudentsTable() {
-    const students = getStudents();
+    let students = getStudents();
     const tableWrapper = document.querySelector('#tab-students .table-wrapper');
     const table = document.getElementById('studentsTable');
+    
+    // Apply group filter if selected (for teachers)
+    const groupFilterSelect = document.getElementById('studentsGroupFilter');
+    const selectedGroupId = groupFilterSelect ? groupFilterSelect.value : '';
+    if (selectedGroupId && isTeacher()) {
+        students = students.filter(s => s.groupId === selectedGroupId);
+    }
     
     if (students.length === 0) {
         tableWrapper.style.display = 'none';
@@ -1350,7 +1415,7 @@ function renderStudentsTable() {
         return getFirstName(a.name).localeCompare(getFirstName(b.name), 'vi');
     });
     
-    studentsTableBody.innerHTML = students.map(student => {
+    studentsTableBody.innerHTML = students.map((student, index) => {
         const points = getStudentPoints(student.id);
         const badgeClass = getPointsBadgeClass(points);
         
@@ -1365,7 +1430,7 @@ function renderStudentsTable() {
         
         return `
             <tr>
-                <td>${student.stt}</td>
+                <td>${index + 1}</td>
                 <td><strong>${student.name}</strong></td>
                 <td>${student.gender}</td>
                 ${groupCell}
@@ -1394,7 +1459,7 @@ function renderStudentsDropdown() {
     students.forEach(s => {
         const option = document.createElement('option');
         option.value = s.id;
-        option.textContent = `${s.stt}. ${s.name}`;
+        option.textContent = s.name;
         recordStudent.appendChild(option);
     });
     
@@ -1403,7 +1468,7 @@ function renderStudentsDropdown() {
     students.forEach(s => {
         const option = document.createElement('option');
         option.value = s.id;
-        option.textContent = `${s.stt}. ${s.name}`;
+        option.textContent = s.name;
         historyStudent.appendChild(option);
     });
 }
@@ -1417,8 +1482,11 @@ function renderHistory() {
     const toDate = historyToDate.value;
     const studentId = historyStudent.value;
     const type = historyType.value;
+    const historyGroupSelect = document.getElementById('historyGroupFilter');
+    const groupId = historyGroupSelect ? historyGroupSelect.value : '';
     
     let records = getRecords();
+    const allStudents = getAllStudents();
     
     // Apply filters
     if (fromDate) {
@@ -1429,6 +1497,11 @@ function renderHistory() {
     }
     if (studentId) {
         records = records.filter(r => r.studentId === studentId);
+    }
+    if (groupId) {
+        // Filter by students in selected group
+        const studentsInGroup = allStudents.filter(s => s.groupId === groupId).map(s => s.id);
+        records = records.filter(r => studentsInGroup.includes(r.studentId));
     }
     if (type) {
         records = records.filter(r => r.type === type);
